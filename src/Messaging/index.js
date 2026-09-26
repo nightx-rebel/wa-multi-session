@@ -1,26 +1,18 @@
-import { proto, WAMessage } from "baileys";
-import { Messages } from "../Defaults";
-import { getSession } from "../Socket";
-import {
-  SendMediaTypes,
-  SendMessageTypes,
-  SendPollTypes,
-  SendReadTypes,
-  SendTypingTypes,
-} from "../Types";
-import { phoneToJid } from "../Utils";
-import { createDelay } from "../Utils/create-delay";
-import { isExist } from "../Utils/is-exist";
+import { Messages } from "../Defaults/index.js";
+import { getSession } from "../Socket/index.js";
+import { phoneToJid } from "../Utils/index.js";
+import { createDelay } from "../Utils/create-delay.js";
+import { isExist } from "../Utils/is-exist.js";
 import mime from "mime";
-import { WhatsappError } from "../Error";
+import { WhatsappError } from "../Error/index.js";
 
-export const sendTextMessage = async ({
+const sendTextMessage = async ({
   sessionId,
   to,
   text = "",
   isGroup = false,
   ...props
-}: SendMessageTypes): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -36,14 +28,15 @@ export const sendTextMessage = async ({
     }
   );
 };
-export const sendImage = async ({
+
+const sendImage = async ({
   sessionId,
   to,
   text = "",
   isGroup = false,
   media,
   ...props
-}: SendMediaTypes): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -66,14 +59,15 @@ export const sendImage = async ({
     }
   );
 };
-export const sendVideo = async ({
+
+const sendVideo = async ({
   sessionId,
   to,
   text = "",
   isGroup = false,
   media,
   ...props
-}: SendMediaTypes): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -96,7 +90,8 @@ export const sendVideo = async ({
     }
   );
 };
-export const sendDocument = async ({
+
+const sendDocument = async ({
   sessionId,
   to,
   text = "",
@@ -104,9 +99,7 @@ export const sendDocument = async ({
   media,
   filename,
   ...props
-}: SendMediaTypes & {
-  filename: string;
-}): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -139,13 +132,13 @@ export const sendDocument = async ({
   );
 };
 
-export const sendVoiceNote = async ({
+const sendVoiceNote = async ({
   sessionId,
   to,
   isGroup = false,
   media,
   ...props
-}: Omit<SendMediaTypes, "text">): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -171,13 +164,13 @@ export const sendVoiceNote = async ({
   );
 };
 
-export const sendSticker = async ({
+const sendSticker = async ({
   sessionId,
   to,
   isGroup,
   media,
   ...props
-}: SendMediaTypes): Promise<WAMessage | undefined> => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -202,23 +195,12 @@ export const sendSticker = async ({
   );
 };
 
-/**
- * Give typing effect to target
- *
- * Looks like human typing
- *
- *
- * @param sessionId - Session ID
- * @param to - Target
- * @param duration - Duration in miliseconds typing effect will appear
- */
-export const sendTyping = async ({
+const sendTyping = async ({
   sessionId,
   to,
   duration = 1000,
   isGroup = false,
-}: SendTypingTypes) => {
-  const oldPhone = to;
+}) => {
   to = phoneToJid({ to, isGroup });
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
@@ -228,30 +210,20 @@ export const sendTyping = async ({
   await session.sock.sendPresenceUpdate("available", to);
 };
 
-/**
- * Give typing effect to target
- *
- * Looks like human typing
- *
- *
- * @param sessionId - Session ID
- * @param to - Target
- * @param duration - Duration in miliseconds typing effect will appear
- */
-export const readMessage = async ({ sessionId, key }: SendReadTypes) => {
+const readMessage = async ({ sessionId, key }) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
 
   await session.sock.readMessages([key]);
 };
 
-export const sendPoll = async ({
+const sendPoll = async ({
   sessionId,
   to,
   poll,
   isGroup = false,
   ...props
-}: SendPollTypes) => {
+}) => {
   const session = getSession(sessionId);
   if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
   to = phoneToJid({ to, isGroup });
@@ -267,4 +239,17 @@ export const sendPoll = async ({
   return await session.sock.sendMessage(to, pollMsg, {
     quoted: props.answering,
   });
+};
+
+export {
+  sendTextMessage,
+  sendImage,
+  sendVideo,
+  sendDocument,
+  sendVoiceNote,
+  sendSticker,
+  sendTyping,
+  readMessage,
+  sendPoll,
+  isExist,
 };

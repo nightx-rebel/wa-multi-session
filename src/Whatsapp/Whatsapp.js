@@ -1,85 +1,58 @@
 import makeWASocket, {
-  AuthenticationCreds,
   Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
   initAuthCreds,
   proto,
-  SignalDataTypeMap,
-  WASocket,
 } from "baileys";
-import { Adapter } from "../Adapter/Adapter";
 import QRCode from "qrcode";
-import {
-  MessageReceived,
-  MessageUpdated,
-  SendMediaTypes,
-  SendMessageTypes,
-  SendPollTypes,
-  SendReadTypes,
-  SendTypingTypes,
-  StartSessionParams,
-  StartSessionWithPairingCodeParams,
-} from "../Types";
-import { CALLBACK_KEY, Messages } from "../Defaults";
-import { WhatsappError } from "../Error";
+import { CALLBACK_KEY, Messages } from "../Defaults/index.js";
+import { WhatsappError } from "../Error/index.js";
 import pino from "pino";
 import {
   jsonBufferToStringParser,
   stringToJsonBufferParser,
-} from "../Utils/json-parser";
+} from "../Utils/json-parser.js";
 import { Boom } from "@hapi/boom";
-import { parseMessageStatusCodeToReadable } from "../Utils/message-status";
+import { parseMessageStatusCodeToReadable } from "../Utils/message-status.js";
 import {
   saveAudioHandler,
   saveDocumentHandler,
   saveImageHandler,
   saveVideoHandler,
-} from "../Utils/save-media";
-import { WhatsappConstructorProps } from "../Types/Whatsapp";
-import { Session, Store } from "../Types/Store";
-import { createDelay, phoneToJid } from "../Utils";
+} from "../Utils/save-media.js";
+import { createDelay, phoneToJid } from "../Utils/index.js";
 import mime from "mime";
-import { GetProfileInfoProps } from "../Types/profile";
 
-export class Whatsapp {
-  private adapter: Adapter;
-  private P: pino.Logger;
-  constructor(props: WhatsappConstructorProps) {
+class Whatsapp {
+  sessions = new Map();
+  callback = new Map();
+  retryCount = new Map();
+
+  constructor(props) {
     if (!props.adapter) {
       throw new WhatsappError(Messages.adapterNotProvided());
     }
     this.adapter = props.adapter;
     this.P = pino({ level: props.debugLevel || "silent" });
 
-    /**
-     * Apply callbacks
-     */
     this.applyCallbacks(props);
 
-    /**
-     * Load existing sessions from adapter
-     */
     if (props.autoLoad ?? true) {
       this.load();
     }
   }
 
-  private sessions = new Map<string, Session>();
-
-  private callback = new Map<string, Function>();
-  private retryCount = new Map<string, number>();
-
-  async getSessionsIds(): Promise<string[]> {
+  async getSessionsIds() {
     return Array.from(this.sessions.keys());
   }
-  async getSessionById(sessionId: string): Promise<Session | undefined> {
+
+  async getSessionById(sessionId) {
     const session = this.sessions.get(sessionId);
     return session;
   }
-  private async getSessionByIdReadyOrThrow(
-    sessionId: string
-  ): Promise<Session> {
+
+  async getSessionByIdReadyOrThrow(sessionId) {
     const session = await this.getSessionById(sessionId);
     if (!session) throw new WhatsappError(Messages.sessionNotFound(sessionId));
     if (session.status !== "connected")
@@ -88,25 +61,24 @@ export class Whatsapp {
     return session;
   }
 
-  private async isSessionExistAndRunning(sessionId: string): Promise<boolean> {
+  async isSessionExistAndRunning(sessionId) {
     if (await this.getSessionById(sessionId)) {
       return true;
     }
     return false;
   }
 
-  private getStore = async (sessionId: string): Promise<Store> => {
-    const creds: AuthenticationCreds =
-      stringToJsonBufferParser(
-        await this.adapter.readData(sessionId, "creds")
-      ) || initAuthCreds();
+  getStore = async (sessionId) => {
+    const creds =
+      stringToJsonBufferParser(await this.adapter.readData(sessionId, "creds")) ||
+      initAuthCreds();
 
     return {
       state: {
         creds: creds,
         keys: {
           get: async (type, ids) => {
-            const data: { [_: string]: SignalDataTypeMap[typeof type] } = {};
+            const data = {};
             for (const id of ids) {
               let value = stringToJsonBufferParser(
                 await this.adapter.readData(sessionId, `${type}-${id}`)
@@ -120,8 +92,8 @@ export class Whatsapp {
           },
           set: async (data) => {
             for (const category in data) {
-              for (const id in data[category as keyof SignalDataTypeMap]) {
-                const value = data[category as keyof SignalDataTypeMap]![id];
+              for (const id in data[category]) {
+                const value = data[category][id];
                 if (value) {
                   await this.adapter.writeData(
                     sessionId,
@@ -151,20 +123,14 @@ export class Whatsapp {
     };
   };
 
-  /**
-   * Start a new Whatsapp Session
-   */
-  async startSession(
-    sessionId: string,
-    options: StartSessionParams = { printQR: true }
-  ): Promise<WASocket> {
+  async startSession(sessionId, options = { printQR: true }) {
     if (await this.isSessionExistAndRunning(sessionId))
       throw new WhatsappError(Messages.sessionAlreadyExist(sessionId));
 
     const { version } = await fetchLatestBaileysVersion();
     const startSocket = async () => {
       const store = await this.getStore(sessionId);
-      const sock: WASocket = makeWASocket({
+      const sock = makeWASocket({
         version,
         auth: store.state,
         logger: this.P,
@@ -205,7 +171,7 @@ export class Whatsapp {
               if (session) this.sessions.get(sessionId).status = "connecting";
             }
             if (connection === "close") {
-              const code = (lastDisconnect?.error as Boom)?.output?.statusCode;
+              const code = lastDisconnect?.error?.output?.statusCode;
               let retryAttempt = this.retryCount.get(sessionId) ?? 0;
               let shouldRetry = false;
               if (code != DisconnectReason.loggedOut && retryAttempt < 10) {
@@ -238,10 +204,10 @@ export class Whatsapp {
           }
           if (events["messages.update"]) {
             const msg = events["messages.update"][0];
-            const data: MessageUpdated = {
+            const data = {
               sessionId: sessionId,
               messageStatus: parseMessageStatusCodeToReadable(
-                msg.update.status!
+                msg.update.status
               ),
               ...msg,
             };
@@ -249,10 +215,8 @@ export class Whatsapp {
             options.onMessageUpdated?.(data);
           }
           if (events["messages.upsert"]) {
-            const msg = events["messages.upsert"]
-              .messages?.[0] as unknown as MessageReceived;
+            const msg = events["messages.upsert"].messages?.[0];
             if (msg?.message?.protocolMessage) {
-              // ignore history sync messages
               return;
             }
             msg.sessionId = sessionId;
@@ -278,15 +242,7 @@ export class Whatsapp {
     }
   }
 
-  /**
-   * Start a session using Phone Number Pairing Code (Beta)
-   * This function is separated to ensure stability and independent logic from QR flow
-   * @beta This function is currently in beta testing
-   */
-  async startSessionWithPairingCode(
-    sessionId: string,
-    options: StartSessionWithPairingCodeParams
-  ): Promise<WASocket> {
+  async startSessionWithPairingCode(sessionId, options) {
     console.warn(
       "startSessionWithPairingCode is currently in beta testing. Please report any issues."
     );
@@ -297,7 +253,7 @@ export class Whatsapp {
     const startSocket = async () => {
       let isPairingCodeRequested = false;
       const store = await this.getStore(sessionId);
-      const sock: WASocket = makeWASocket({
+      const sock = makeWASocket({
         version,
         auth: store.state,
         logger: this.P,
@@ -322,15 +278,12 @@ export class Whatsapp {
               });
             }
 
-            // Handle pairing code request if not registered
             if (
               !sock.authState.creds.registered &&
               (connection === "connecting" || !!update.qr) &&
               !isPairingCodeRequested
             ) {
-              isPairingCodeRequested = true; // Prevents race conditions / multiple requests
-
-              // Add delay to ensure connection is stable before requesting code
+              isPairingCodeRequested = true;
               await createDelay(2000);
 
               try {
@@ -342,7 +295,7 @@ export class Whatsapp {
                 options.onPairingCode?.(code);
               } catch (error) {
                 console.log("Error Requesting Pairing Code", error);
-                isPairingCodeRequested = false; // Reset flag to allow retry on error
+                isPairingCodeRequested = false;
               }
             }
 
@@ -353,7 +306,7 @@ export class Whatsapp {
               if (session) this.sessions.get(sessionId).status = "connecting";
             }
             if (connection === "close") {
-              const code = (lastDisconnect?.error as Boom)?.output?.statusCode;
+              const code = lastDisconnect?.error?.output?.statusCode;
               let retryAttempt = this.retryCount.get(sessionId) ?? 0;
               let shouldRetry = false;
               if (code != DisconnectReason.loggedOut && retryAttempt < 10) {
@@ -386,10 +339,10 @@ export class Whatsapp {
           }
           if (events["messages.update"]) {
             const msg = events["messages.update"][0];
-            const data: MessageUpdated = {
+            const data = {
               sessionId: sessionId,
               messageStatus: parseMessageStatusCodeToReadable(
-                msg.update.status!
+                msg.update.status
               ),
               ...msg,
             };
@@ -397,10 +350,8 @@ export class Whatsapp {
             options.onMessageUpdated?.(data);
           }
           if (events["messages.upsert"]) {
-            const msg = events["messages.upsert"]
-              .messages?.[0] as unknown as MessageReceived;
+            const msg = events["messages.upsert"].messages?.[0];
             if (msg?.message?.protocolMessage) {
-              // ignore history sync messages
               return;
             }
             msg.sessionId = sessionId;
@@ -426,10 +377,7 @@ export class Whatsapp {
     }
   }
 
-  /**
-   * Delete or Logout Whatsapp Session
-   */
-  async deleteSession(sessionId: string) {
+  async deleteSession(sessionId) {
     const session = await this.getSessionById(sessionId);
     try {
       await session?.sock.logout().catch(() => {});
@@ -439,10 +387,7 @@ export class Whatsapp {
     this.sessions.delete(sessionId);
   }
 
-  /**
-   * Register callback for various events
-   */
-  private applyCallbacks(props: WhatsappConstructorProps) {
+  applyCallbacks(props) {
     if (props.onConnecting) {
       this.callback.set(CALLBACK_KEY.ON_CONNECTING, props.onConnecting);
     }
@@ -472,14 +417,10 @@ export class Whatsapp {
     }
   }
 
-  /**
-   * Load sessions from adapter
-   */
   async load() {
     try {
       const sessionIds = (await this.adapter.listSessions?.()) || [];
       for (const sessionId of sessionIds) {
-        // check if session is already running
         if (await this.isSessionExistAndRunning(sessionId)) {
           continue;
         }
@@ -491,28 +432,7 @@ export class Whatsapp {
     }
   }
 
-  /**
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   * Messaging functions
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   */
-
-  /**
-   * Send Text Message
-   */
-  sendText = async (props: SendMessageTypes & { text: string }) => {
+  sendText = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -528,10 +448,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Image Message
-   */
-  sendImage = async (props: SendMediaTypes) => {
+  sendImage = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -552,10 +469,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Video Message
-   */
-  sendVideo = async (props: SendMediaTypes) => {
+  sendVideo = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -576,10 +490,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Document Message
-   */
-  sendDocument = async (props: SendMediaTypes & { filename: string }) => {
+  sendDocument = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -611,14 +522,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Audio Message
-   */
-  sendAudio = async (
-    props: Omit<SendMediaTypes, "text"> & {
-      asVoiceNote?: boolean;
-    }
-  ) => {
+  sendAudio = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -643,10 +547,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Sticker Message
-   */
-  sendSticker = async (props: Omit<SendMediaTypes, "text">) => {
+  sendSticker = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -670,10 +571,7 @@ export class Whatsapp {
     );
   };
 
-  /**
-   * Send Polling Message
-   */
-  sendPoll = async (props: SendPollTypes) => {
+  sendPoll = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -690,10 +588,7 @@ export class Whatsapp {
     });
   };
 
-  /**
-   * Send Typing Indicator
-   */
-  sendTypingIndicator = async (props: SendTypingTypes) => {
+  sendTypingIndicator = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
     const to = phoneToJid({ to: props.to, isGroup: props.isGroup });
 
@@ -702,19 +597,13 @@ export class Whatsapp {
     await session.sock.sendPresenceUpdate("available", to);
   };
 
-  /**
-   * Mark Message as Read
-   */
-  readMessage = async (props: SendReadTypes) => {
+  readMessage = async (props) => {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
 
     await session.sock.readMessages([props.key]);
   };
 
-  /**
-   * Get Profile Information
-   */
-  async getProfile(props: GetProfileInfoProps) {
+  async getProfile(props) {
     const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
 
     const [profilePictureUrl, status] = await Promise.allSettled([
@@ -730,10 +619,7 @@ export class Whatsapp {
     };
   }
 
-  /**
-   * Check is user or group exist
-   */
-  async isExist(props: SendMessageTypes): Promise<boolean> {
+  async isExist(props) {
     try {
       const session = await this.getSessionByIdReadyOrThrow(props.sessionId);
       const receiver = phoneToJid({
@@ -753,3 +639,5 @@ export class Whatsapp {
     }
   }
 }
+
+export { Whatsapp };

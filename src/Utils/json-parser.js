@@ -1,6 +1,6 @@
 import { BufferJSON } from "baileys";
 
-export const stringToJsonBufferParser = (str: string) => {
+const stringToJsonBufferParser = (str) => {
   try {
     return JSON.parse(str, BufferJSON.reviver);
   } catch (error) {
@@ -8,10 +8,12 @@ export const stringToJsonBufferParser = (str: string) => {
   }
 };
 
-export const jsonBufferToStringParser = (obj: any) => {
+const jsonBufferToStringParser = (obj) => {
   try {
     return JSON.stringify(obj, BufferJSON.replacer);
   } catch (error) {
     return null;
   }
 };
+
+export { stringToJsonBufferParser, jsonBufferToStringParser };

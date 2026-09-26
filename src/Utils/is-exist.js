@@ -1,20 +1,12 @@
-import { WhatsappError } from "../Error";
-import { getSession } from "../Socket";
-import { SendMessageTypes } from "../Types";
-import { phoneToJid } from "./phone-to-jid";
+import { WhatsappError } from "../Error/index.js";
+import { getSession } from "../Socket/index.js";
+import { phoneToJid } from "./phone-to-jid.js";
 
-export const isExist = async ({
-  sessionId,
-  to,
-  isGroup = false,
-}: SendMessageTypes): Promise<boolean> => {
+const isExist = async ({ sessionId, to, isGroup = false }) => {
   try {
     const session = getSession(sessionId);
     if (!session) throw new WhatsappError("Session ID Not Found!");
-    const receiver = phoneToJid({
-      to: to,
-      isGroup: isGroup,
-    });
+    const receiver = phoneToJid({ to: to, isGroup: isGroup });
     if (!isGroup) {
       const one = Boolean(
         (await session?.sock.onWhatsApp(receiver))?.[0]?.exists
@@ -27,3 +19,5 @@ export const isExist = async ({
     throw error;
   }
 };
+
+export { isExist };

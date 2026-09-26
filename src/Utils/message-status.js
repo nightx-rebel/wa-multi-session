@@ -1,9 +1,6 @@
 import { proto } from "baileys";
-import { MessageUpdated } from "../Types";
 
-export const parseMessageStatusCodeToReadable = (
-  code: proto.WebMessageInfo.Status
-): MessageUpdated["messageStatus"] => {
+const parseMessageStatusCodeToReadable = (code) => {
   if (code == proto.WebMessageInfo.Status.PENDING) return "pending";
   if (code == proto.WebMessageInfo.Status.SERVER_ACK) return "server";
   if (code == proto.WebMessageInfo.Status.DELIVERY_ACK) return "delivered";
@@ -12,3 +9,5 @@ export const parseMessageStatusCodeToReadable = (
 
   return "error";
 };
+
+export { parseMessageStatusCodeToReadable };

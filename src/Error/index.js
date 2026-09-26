@@ -1,11 +1,13 @@
-export class WhatsappError extends Error {
-  constructor(message: string) {
+class WhatsappError extends Error {
+  constructor(message) {
     super(message);
     this.name = "WhatsappError";
     Object.setPrototypeOf(this, WhatsappError.prototype);
   }
 
-  static isWhatsappError(error: any): error is WhatsappError {
+  static isWhatsappError(error) {
     return error instanceof WhatsappError || error instanceof Error;
   }
 }
+
+export { WhatsappError };

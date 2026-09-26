@@ -1,23 +1,18 @@
 import sqlite3 from "sqlite3";
-import { Database, open } from "sqlite";
-import path from "path";
+import { open } from "sqlite";
+import path from "node:path";
 import {
-  AuthenticationCreds,
-  AuthenticationState,
   BufferJSON,
   initAuthCreds,
   proto,
-  SignalDataTypeMap,
 } from "baileys";
-import { CREDENTIALS } from "../Defaults";
-import fs from "fs/promises";
-import { LegacyStore } from "./Store";
+import { CREDENTIALS } from "../Defaults/index.js";
+import fs from "node:fs/promises";
 
-let db: Database<sqlite3.Database, sqlite3.Statement> | null = null;
+let db = null;
 
 const getDb = async () => {
   if (!db) {
-    // make directory if not exists
     await fs.mkdir(path.resolve(CREDENTIALS.DIR_NAME), { recursive: true });
 
     db = await open({
@@ -31,7 +26,6 @@ const getDb = async () => {
     await db.exec("PRAGMA busy_timeout = 5000;");
     db.configure("busyTimeout", 5000);
 
-    // Create table if not exists
     await db.exec(`
     CREATE TABLE IF NOT EXISTS auth_store (
       id TEXT,
@@ -46,16 +40,10 @@ const getDb = async () => {
   return db;
 };
 
-export const useSQLiteAuthState = async (
-  sessionId: string
-): Promise<{
-  state: AuthenticationState;
-  saveCreds: () => Promise<void>;
-  deleteCreds: () => Promise<void>;
-}> => {
+const useSQLiteAuthState = async (sessionId) => {
   const database = await getDb();
 
-  const writeData = async (id: string, category: string, data: any) => {
+  const writeData = async (id, category, data) => {
     await database.run(
       `
       INSERT OR REPLACE INTO auth_store (id, session_id, category, value)
@@ -68,7 +56,7 @@ export const useSQLiteAuthState = async (
     );
   };
 
-  const readData = async (id: string) => {
+  const readData = async (id) => {
     const row = await database.get(
       `SELECT value FROM auth_store WHERE id = ? AND session_id = ?`,
       id,
@@ -77,7 +65,7 @@ export const useSQLiteAuthState = async (
     return row ? JSON.parse(row.value, BufferJSON.reviver) : null;
   };
 
-  const removeData = async (id: string) => {
+  const removeData = async (id) => {
     await database.run(
       `DELETE FROM auth_store WHERE id = ? AND session_id = ?`,
       id,
@@ -91,15 +79,14 @@ export const useSQLiteAuthState = async (
     );
   };
 
-  const creds: AuthenticationCreds =
-    (await readData("creds")) || initAuthCreds();
+  const creds = (await readData("creds")) || initAuthCreds();
 
   return {
     state: {
       creds,
       keys: {
         get: async (type, ids) => {
-          const data: { [_: string]: SignalDataTypeMap[typeof type] } = {};
+          const data = {};
           for (const id of ids) {
             let value = await readData(`${type}-${id}`);
             if (type === "app-state-sync-key" && value) {
@@ -111,8 +98,8 @@ export const useSQLiteAuthState = async (
         },
         set: async (data) => {
           for (const category in data) {
-            for (const id in data[category as keyof SignalDataTypeMap]) {
-              const value = data[category as keyof SignalDataTypeMap]![id];
+            for (const id in data[category]) {
+              const value = data[category][id];
               if (value) {
                 await writeData(`${category}-${id}`, category, value);
               } else {
@@ -132,23 +119,19 @@ export const useSQLiteAuthState = async (
   };
 };
 
-export const getSQLiteSessionIds = async () => {
+const getSQLiteSessionIds = async () => {
   const database = await getDb();
   const sessions = await database.all(
     "SELECT DISTINCT session_id FROM auth_store"
   );
-  return (
-    sessions as {
-      session_id: string;
-    }[]
-  ).map((row) => row.session_id);
+  return sessions.map((row) => row.session_id);
 };
 
-export class SQLiteStore implements LegacyStore {
-  sessionId: string;
-  state: AuthenticationState;
+class SQLiteStore {
+  sessionId;
+  state;
 
-  private writeData = async (id: string, category: string, data: any) => {
+  writeData = async (id, category, data) => {
     const db = await getDb();
 
     await db.run(
@@ -163,7 +146,7 @@ export class SQLiteStore implements LegacyStore {
     );
   };
 
-  private readData = async (id: string) => {
+  readData = async (id) => {
     const db = await getDb();
 
     const row = await db.get(
@@ -174,7 +157,7 @@ export class SQLiteStore implements LegacyStore {
     return row ? JSON.parse(row.value, BufferJSON.reviver) : null;
   };
 
-  private removeData = async (id: string) => {
+  removeData = async (id) => {
     const db = await getDb();
 
     await db.run(
@@ -183,19 +166,19 @@ export class SQLiteStore implements LegacyStore {
       this.sessionId
     );
   };
-  private clearData = async () => {
+  clearData = async () => {
     const db = await getDb();
 
     await db.run(`DELETE FROM auth_store WHERE session_id = ?`, this.sessionId);
   };
 
-  constructor(sessionId: string) {
+  constructor(sessionId) {
     this.sessionId = sessionId;
     this.state = {
       creds: initAuthCreds(),
       keys: {
         get: async (type, ids) => {
-          const data: { [_: string]: SignalDataTypeMap[typeof type] } = {};
+          const data = {};
           for (const id of ids) {
             let value = await this.readData(`${type}-${id}`);
             if (type === "app-state-sync-key" && value) {
@@ -207,8 +190,8 @@ export class SQLiteStore implements LegacyStore {
         },
         set: async (data) => {
           for (const category in data) {
-            for (const id in data[category as keyof SignalDataTypeMap]) {
-              const value = data[category as keyof SignalDataTypeMap]![id];
+            for (const id in data[category]) {
+              const value = data[category][id];
               if (value) {
                 await this.writeData(`${category}-${id}`, category, value);
               } else {
@@ -228,3 +211,5 @@ export class SQLiteStore implements LegacyStore {
     await this.clearData();
   }
 }
+
+export { useSQLiteAuthState, getSQLiteSessionIds, SQLiteStore };

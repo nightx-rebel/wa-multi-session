@@ -1,0 +1,3 @@
+class LegacyStore {}
+
+export { LegacyStore };

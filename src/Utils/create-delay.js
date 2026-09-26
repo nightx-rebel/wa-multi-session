@@ -1,7 +1,9 @@
-export const createDelay = async (duration: number = 1000) => {
+const createDelay = async (duration = 1000) => {
   return await new Promise((resolve) =>
     setTimeout(() => {
       resolve(true);
     }, duration)
   );
 };
+
+export { createDelay };

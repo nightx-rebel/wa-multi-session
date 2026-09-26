@@ -1,33 +1,29 @@
 import { downloadMediaMessage } from "baileys";
-import { MessageReceived } from "../Types";
-import ValidationError from "./error";
-import fs from "fs/promises";
+import ValidationError from "./error.js";
+import fs from "node:fs/promises";
 
-const saveMedia = async (path: string, data: Buffer) => {
+const saveMedia = async (path, data) => {
   await fs.writeFile(path, data.toString("base64"), "base64");
 };
 
-export const saveImageHandler = async (msg: MessageReceived, path: string) => {
+const saveImageHandler = async (msg, path) => {
   if (!msg.message?.imageMessage)
     throw new ValidationError("Message is not contain Image");
 
   const buf = await downloadMediaMessage(msg, "buffer", {});
 
-  return saveMedia(path, buf as Buffer);
+  return saveMedia(path, buf);
 };
-export const saveVideoHandler = async (msg: MessageReceived, path: string) => {
+const saveVideoHandler = async (msg, path) => {
   if (!msg.message?.videoMessage)
     throw new ValidationError("Message is not contain Video");
 
   const buf = await downloadMediaMessage(msg, "buffer", {});
 
-  return saveMedia(path, buf as Buffer);
+  return saveMedia(path, buf);
 };
 
-export const saveDocumentHandler = async (
-  msg: MessageReceived,
-  path: string
-) => {
+const saveDocumentHandler = async (msg, path) => {
   if (!msg.message?.documentMessage)
     throw new ValidationError("Message is not contain Document");
 
@@ -35,14 +31,21 @@ export const saveDocumentHandler = async (
 
   const ext = msg.message.documentMessage.fileName?.split(".").pop();
   path += "." + ext;
-  return saveMedia(path, buf as Buffer);
+  return saveMedia(path, buf);
 };
 
-export const saveAudioHandler = async (msg: MessageReceived, path: string) => {
+const saveAudioHandler = async (msg, path) => {
   if (!msg.message?.audioMessage)
     throw new ValidationError("Message is not contain Audio");
 
   const buf = await downloadMediaMessage(msg, "buffer", {});
 
-  return saveMedia(path, buf as Buffer);
+  return saveMedia(path, buf);
+};
+
+export {
+  saveImageHandler,
+  saveVideoHandler,
+  saveDocumentHandler,
+  saveAudioHandler,
 };
